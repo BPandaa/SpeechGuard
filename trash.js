@@ -85,8 +85,6 @@ function findTimeline(targetNode, config) {
             timelineParent = document.querySelector('div[aria-label="Timeline: Search timeline"]')
         }
 
-        console.log()
-
         // find the timeline
         if (timelineParent != undefined && (timelineParent.firstChild.querySelector('div[role="progressbar"]') == timelineParent.firstChild.querySelector('div > div[role="progressbar"][style="visibility: hidden;"]') )  )  {
             console.log("found timeline")
