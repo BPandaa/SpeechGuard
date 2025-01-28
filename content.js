@@ -1,188 +1,152 @@
-var rootObOn = false
-var timelineObOn = false
+// Select all elements with `data-testid="cellInnerDiv`
+const tweetContainers = document.querySelectorAll('[aria-label="Timeline: Your Home Timeline"] [data-testid="cellInnerDiv"]');
 
-let timeline;
-let observer;
-
-
-// 
-
-async function sendPostText(post) {
-    post.setAttribute("seen", "false")
-    let texts = post.querySelectorAll('div[data-testid="tweetText"] > span')
-    let message = ""
-    let isHate 
-    for (j = 0 ; j < texts.length ; j++) {
-        let childno = texts[j]
-        message += childno.innerText
-    }
-    if (message.length > 0) {
-        await fetch("http://localhost:5000/", {
-        method: 'POST',
-        headers: {
-            "Content-Type": "text/plain",
-        },  
-        body: message
-            }).then(response => {
-                response.text().then((data) => {
-                    isHate = data
-
-                    if (isHate == 1 ) {
-                            post.firstChild.style.filter = 'blur(10px)'
-                            let warningText = document.createElement("p")
-                            warningText.innerText = "this post may contain hate speech"
-                            let buttonB = document.createElement("button")
-                            buttonB.className = "blurButton"
-                            buttonB.setAttribute("active" , "false") 
-                            buttonB.innerText = "View post anyway"   
-                            warningText.appendChild(buttonB)
-                            post.appendChild(warningText)
-                        
-                        
-                    } else {
-                            let warningText = document.createElement("p")
-                            warningText.innerText = "this post does not contain hate speech"
-                            post.appendChild(warningText)
-                    }
-                })
-        
-            })
-
-    }
-}
-
-//Root div observer promise wrapper 
-function findTimeline(targetNode, config) {
-    return new Promise((resolve, reject) => {
-    // Observe root div for changes
-    observer = new MutationObserver((mutationsList, observer) => {
-        rootObOn = true
-        console.log("root changes")
-
-
-        // Find out what section to look for
-        let url = window.location.href
-        let timelineParent 
-        if (url == "https://twitter.com/home") {
-            //home timeline
-            timelineParent = document.querySelector('div[aria-label="Timeline: Your Home Timeline"]')
-        } else if ( /^\d*$/.test( url.slice(-6)) == true ){
-            //post timeline
-           // console.log("here")
-            timelineParent = document.querySelector('div[aria-label="Timeline: Conversation"]')
-        
-        //check if we are in the profile timeline
-        } else if ( document.querySelector('nav[aria-label="Profile timelines"]') != undefined){
-
-            //check if we are on the profile section or highlights
-            if (document.querySelector('div[aria-label$="posts"]') != undefined) {
-                timelineParent = document.querySelector('div[aria-label$="posts"]')
-            } else if (document.querySelector('div[aria-label$="Highlights"]') != undefined) {
-                timelineParent = document.querySelector('div[aria-label$="Highlights"]')
-            }
-        //check if we are in the search timeline
-        } else if (url.startsWith("https://twitter.com/search") || url.startsWith("https://twitter.com/hashtag")) {
-            timelineParent = document.querySelector('div[aria-label="Timeline: Search timeline"]')
-        }
-
-        console.log()
-
-        // find the timeline
-        if (timelineParent != undefined && (timelineParent.firstChild.querySelector('div[role="progressbar"]') == timelineParent.firstChild.querySelector('div > div[role="progressbar"][style="visibility: hidden;"]') )  )  {
-            console.log("found timeline")
-            rootObOn = false
-            observer.disconnect();
-            timeline = timelineParent.firstChild
-            
-            //add click event listener for blur button
-            timeline.addEventListener('click', (event) => {
-                const isButton = event.target.className === 'blurButton'
-                if (isButton) {
-                    if (event.target.getAttribute("active") == "false") {
-
-                        event.target.setAttribute("active" , "true")
-                        event.target.parentElement.previousSibling.style = ""
-                        event.target.innerHTML = "Blur the post again"
-                        event.target.previousSibling.innerHTML = ""
-
-                    } else if (event.target.getAttribute("active") == "true") {
-
-                        event.target.setAttribute("active" , "false")
-                        event.target.parentElement.previousSibling.style.filter = "blur(10px)"
-                        event.target.innerHTML = "View post anyway"
-                        event.target.previousSibling.innerHTML = "This post may contain hatespeech"
-                    }
-                }
-              
-              })
-              
-            //loop through prerendered posts
-            for (i = 0 ; i < timeline.childNodes.length ; i++) {
-                let post = timeline.childNodes[i]
-                sendPostText(post)
-            }
-            resolve(timeline)
-        }
-
-
-
-    });
-
-        observer.observe(targetNode, config)
-    });
-
-}   
-
-
-// Timeline Observer
-const TimelineObserver = new MutationObserver((mutationsList, TimelineObserver) => {
-    timelineObOn = true
-    mutationsList.forEach(record => {
-        if(record.addedNodes.length > 0  && record.target == timeline && !record.addedNodes[0].hasAttribute("seen")){
-            
-            let post = record.addedNodes[0]
-            sendPostText(post)
-            
-        }
-    });
-    
+tweetContainers.forEach((container, index) => {
+    const spans = container.querySelectorAll('[dir="auto"] span');
+    const allText = Array.from(spans).map(span => span.textContent).join(' ');
+    console.log(allText.trim());
 });
 
+// Flags to track observer activity
+let isRootObserverActive = false;
+let isTimelineObserverActive = false;
 
-// Configs
-var targetNode = document.getElementById("react-root")
-var config = { attributes: false, childList: true, subtree: true }
+// Global variables for observers and timeline
+let timeline;
+let rootObserver;
+let timelineObserver;
 
+// Config for MutationObserver
+const targetNode = document.getElementById("react-root");
+const config = { attributes: false, childList: true, subtree: true };
 
-// URL change listener
+// URL Change Listener
 window.navigation.addEventListener("navigate", (event) => {
-    //disconnect previous observer
     console.log('URL: ', window.location.href);
-    if (rootObOn == true) {
-        console.log("closed root observer")
-        observer.disconnect()
+
+    // Disconnect existing observers
+    if (isRootObserverActive && rootObserver) {
+        console.log("closed root observer");
+        rootObserver.disconnect();
+        isRootObserverActive = false;
+    }
+    if (isTimelineObserverActive && timelineObserver) {
+        console.log("closed timeline observer");
+        timelineObserver.disconnect();
+        isTimelineObserverActive = false;
     }
 
-    if (timelineObOn == true) {
-        timelineObOn = false
-        console.log("closed timeline observer")
-        TimelineObserver.disconnect()
-    }
-
-
-    // Start root observer
+    // Start the root observer
     findTimeline(targetNode, config)
-    .then(timeline => {
-        
-        console.log(timeline)
-        // start timeline observer when found
-        TimelineObserver.observe(timeline , config)
-    })
-    .catch(error => {
-        console.error('Error observing mutations:', error)
-    })
-})
+        .then((timeline) => {
+            console.log("Timeline found:", timeline);
+            // Start observing the timeline for new tweets
+            timelineObserver = new MutationObserver((mutationsList) => {
+                isTimelineObserverActive = true;
+                mutationsList.forEach(record => {
+                    if (record.addedNodes.length > 0 && record.target === timeline && !record.addedNodes[0].hasAttribute("seen")) {
+                        let post = record.addedNodes[0];
+                        sendPostText(post);
+                    }
+                });
+            });
+            timelineObserver.observe(timeline, config);
+        })
+        .catch((error) => {
+            console.error("Error observing mutations:", error);
+        });
+});
 
+// Root div observer promise wrapper
+function findTimeline(targetNode, config) {
+    return new Promise((resolve, reject) => {
+        rootObserver = new MutationObserver((mutationsList) => {
+            isRootObserverActive = true;
+            console.log("root changes");
 
+            // Find the correct timeline based on the current URL
+            const url = window.location.href;
+            let timelineParent;
 
+            if (url === "https://x.com/home") {
+                timelineParent = document.querySelector('div[aria-label="Timeline: Your Home Timeline"]');
+            } else if (/^\d*$/.test(url.slice(-6))) {
+                timelineParent = document.querySelector('div[aria-label="Timeline: Conversation"]');
+            } else if (document.querySelector('nav[aria-label="Profile timelines"]')) {
+                if (document.querySelector('div[aria-label$="posts"]')) {
+                    timelineParent = document.querySelector('div[aria-label$="posts"]');
+                } else if (document.querySelector('div[aria-label$="Highlights"]')) {
+                    timelineParent = document.querySelector('div[aria-label$="Highlights"]');
+                }
+            } else if (url.startsWith("https://x.com/search") || url.startsWith("https://x.com/hashtag")) {
+                timelineParent = document.querySelector('div[aria-label="Timeline: Search timeline"]');
+            }
 
+            // If the timeline is ready, resolve the promise
+            if (
+                timelineParent &&
+                timelineParent.firstChild.querySelector('div[role="progressbar"]') ===
+                timelineParent.firstChild.querySelector('div > div[role="progressbar"][style="visibility: hidden;"]')
+            ) {
+                console.log("found timeline");
+                isRootObserverActive = false;
+                rootObserver.disconnect();
+                timeline = timelineParent.firstChild;
+
+                // Add click listeners to handle blur buttons
+                timeline.addEventListener('click', (event) => {
+                    const isButton = event.target.className === 'blurButton';
+                    if (isButton) {
+                        if (event.target.getAttribute("active") === "false") {
+                            event.target.setAttribute("active", "true");
+                            event.target.parentElement.previousSibling.style = "";
+                            event.target.innerHTML = "Blur the post again";
+                        } else {
+                            event.target.setAttribute("active", "false");
+                            event.target.parentElement.previousSibling.style.filter = "blur(10px)";
+                            event.target.innerHTML = "View post anyway";
+                        }
+                    }
+                });
+
+                // Process pre-rendered posts
+                Array.from(timeline.childNodes).forEach((post) => sendPostText(post));
+                resolve(timeline);
+            }
+        });
+
+        rootObserver.observe(targetNode, config);
+    });
+}
+
+// Function to process each tweet
+async function sendPostText(post) {
+    post.setAttribute("seen", "false");
+    const texts = post.querySelectorAll('div[data-testid="tweetText"] > span');
+    let message = Array.from(texts).map(span => span.innerText).join(' ');
+
+    if (message.length > 0) {
+        const response = await fetch("http://localhost:5000/", {
+            method: 'POST',
+            headers: { "Content-Type": "text/plain" },
+            body: message,
+        });
+
+        const isHate = await response.text();
+        if (isHate == 1) {
+            post.firstChild.style.filter = 'blur(10px)';
+            const warningText = document.createElement("p");
+            warningText.innerText = "This post may contain hate speech";
+            const button = document.createElement("button");
+            button.className = "blurButton";
+            button.setAttribute("active", "false");
+            button.innerText = "View post anyway";
+            warningText.appendChild(button);
+            post.appendChild(warningText);
+        } else {
+            const safeText = document.createElement("p");
+            safeText.innerText = "This post does not contain hate speech";
+            post.appendChild(safeText);
+        }
+    }
+}
